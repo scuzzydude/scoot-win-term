@@ -25,12 +25,18 @@ function Get-PuttySessions {
         }
 
         [PSCustomObject]@{
-            Name       = $name
-            HostName   = $props.HostName
-            PortNumber = $props.PortNumber
-            Protocol   = if ($props.SSHProtocolVersion -eq 1) { 'ssh1' } else { 'ssh' }
-            Username   = $props.UserName
-            Colours    = $colours
+            Name           = $name
+            HostName       = $props.HostName
+            PortNumber     = $props.PortNumber
+            Protocol       = if ($props.SSHProtocolVersion -eq 1) { 'ssh1' } else { 'ssh' }
+            Username       = $props.UserName
+            Colours        = $colours
+            # ProxyMethod 6 = "SSH to proxy and use port forwarding" --
+            # PuTTY's equivalent of OpenSSH's ProxyJump.
+            ProxyMethod    = $props.ProxyMethod
+            ProxyHost      = $props.ProxyHost
+            ProxyPort      = $props.ProxyPort
+            ProxyUsername  = $props.ProxyUsername
         }
     }
 }

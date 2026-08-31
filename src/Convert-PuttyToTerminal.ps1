@@ -47,6 +47,16 @@ foreach ($s in $sessions) {
 
     $sshArgs = @()
     if ($s.PortNumber -and $s.PortNumber -ne 22) { $sshArgs += "-p $($s.PortNumber)" }
+
+    # ProxyMethod 6 = PuTTY's "SSH to proxy and use port forwarding",
+    # i.e. a jump host. Without this, hosts only reachable through that
+    # jump host (like Big Mo) just time out when dialed directly.
+    if ($s.ProxyMethod -eq 6 -and $s.ProxyHost) {
+        $jumpTarget = Resolve-SshTarget -HostName $s.ProxyHost -Username $s.ProxyUsername
+        if ($s.ProxyPort -and $s.ProxyPort -ne 22) { $jumpTarget = "${jumpTarget}:$($s.ProxyPort)" }
+        $sshArgs += "-J $jumpTarget"
+    }
+
     $target = Resolve-SshTarget -HostName $s.HostName -Username $s.Username
     $commandLine = "ssh.exe $($sshArgs -join ' ') $target".Trim() -replace '\s+', ' '
 
