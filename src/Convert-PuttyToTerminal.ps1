@@ -21,6 +21,7 @@ Import-Module (Join-Path $here 'modules\ColorScheme.psm1') -Force
 Import-Module (Join-Path $here 'modules\MtPuttyStore.psm1') -Force
 Import-Module (Join-Path $here 'modules\FragmentWriter.psm1') -Force
 Import-Module (Join-Path $here 'modules\Guid.psm1') -Force
+Import-Module (Join-Path $here 'modules\SshConfigResolver.psm1') -Force
 
 $sessions = Get-PuttySessions
 if (-not $sessions -or $sessions.Count -eq 0) {
@@ -46,7 +47,7 @@ foreach ($s in $sessions) {
 
     $sshArgs = @()
     if ($s.PortNumber -and $s.PortNumber -ne 22) { $sshArgs += "-p $($s.PortNumber)" }
-    $target = if ($s.Username) { "$($s.Username)@$($s.HostName)" } else { $s.HostName }
+    $target = Resolve-SshTarget -HostName $s.HostName -Username $s.Username
     $commandLine = "ssh.exe $($sshArgs -join ' ') $target".Trim() -replace '\s+', ' '
 
     $guid = New-DeterministicGuid -Name "scoot-win-term/putty/$($s.Name)"
@@ -58,6 +59,7 @@ foreach ($s in $sessions) {
         tabTitle    = $s.Name
         colorScheme = $schemeName
         icon        = 'ms-appx:///ProfileIcons/{9acb9455-ca41-5af7-950f-6bca1bc9722f}.png'
+        hidden      = $false
     }
 }
 
@@ -69,6 +71,7 @@ if ($profiles.Count -eq 0) {
 $result = Write-TerminalFragment -Profiles $profiles -Schemes $schemes -WhatIf:$WhatIf
 
 if ($WhatIf) {
+    Write-Output $result
     Write-Host "`n(-WhatIf: nothing written)" -ForegroundColor Yellow
 } else {
     Write-Host "Wrote $($profiles.Count) profile(s) and $($schemes.Count) scheme(s) to:`n$result" -ForegroundColor Green

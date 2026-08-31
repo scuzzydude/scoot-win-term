@@ -12,8 +12,13 @@ function Write-TerminalFragment {
     <#
     .SYNOPSIS
     Writes/updates one fragment JSON file containing the given profiles
-    and color schemes. Uses the "updates":"<guid>" patch key on each
-    profile so re-runs update in place instead of duplicating entries.
+    and color schemes. Re-runs update in place because each profile's
+    "guid" is stable/deterministic -- Windows Terminal dedupes fragment
+    profiles by guid on its own. Do NOT also set "updates" to a
+    profile's own guid: "updates" tells Windows Terminal to patch an
+    *existing* profile, and since these guids don't already exist as
+    profiles, the loader silently drops the whole entry instead of
+    creating it.
 
     .PARAMETER WhatIf
     Print the JSON that would be written instead of writing it.
@@ -27,16 +32,8 @@ function Write-TerminalFragment {
         [switch]$WhatIf
     )
 
-    $patchedProfiles = $Profiles | ForEach-Object {
-        $p = $_.PSObject.Copy()
-        if (-not $p.updates) {
-            $p | Add-Member -NotePropertyName 'updates' -NotePropertyValue $p.guid -Force
-        }
-        $p
-    }
-
     $fragment = [ordered]@{
-        profiles = $patchedProfiles
+        profiles = $Profiles
         schemes  = $Schemes
     }
 

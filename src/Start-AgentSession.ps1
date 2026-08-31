@@ -8,12 +8,13 @@ Passed through to Get-AgentManifest.ps1.
 #>
 [CmdletBinding()]
 param(
-    [string]$ServersConfPath = (Join-Path $PSScriptRoot 'servers.conf')
+    [string]$ServersConfPath
 )
+if (-not $ServersConfPath) { $ServersConfPath = Join-Path $PSScriptRoot 'servers.conf' }
 
 . (Join-Path $PSScriptRoot 'Get-AgentManifest.ps1')
 
-$agents = Get-AgentManifest -ServersConfPath $ServersConfPath
+$agents = @(Get-AgentManifest -ServersConfPath $ServersConfPath)
 
 if (-not $agents -or $agents.Count -eq 0) {
     Write-Warning "No live agent sessions found across any server."

@@ -16,8 +16,9 @@ AttachCmd, StartTime.
 #>
 [CmdletBinding()]
 param(
-    [string]$ServersConfPath = (Join-Path $PSScriptRoot 'servers.conf')
+    [string]$ServersConfPath
 )
+if (-not $ServersConfPath) { $ServersConfPath = Join-Path $PSScriptRoot 'servers.conf' }
 
 function Read-ServerRegistry {
     param([Parameter(Mandatory)][string]$Path)
@@ -92,8 +93,9 @@ function Get-ServerAgentManifest {
 
 function Get-AgentManifest {
     [CmdletBinding()]
-    param([string]$ServersConfPath = (Join-Path $PSScriptRoot 'servers.conf'))
+    param([string]$ServersConfPath)
 
+    if (-not $ServersConfPath) { $ServersConfPath = Join-Path $PSScriptRoot 'servers.conf' }
     $servers = Read-ServerRegistry -Path $ServersConfPath
     $all = @()
     foreach ($s in $servers) {
