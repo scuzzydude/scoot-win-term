@@ -37,7 +37,7 @@ $schemes  = @()
 
 foreach ($s in $sessions) {
     if (-not $s.HostName) {
-        Write-Verbose "Skipping '$($s.Name)' — no HostName (likely 'Default Settings' or a template entry)."
+        Write-Verbose "Skipping '$($s.Name)' -- no HostName (likely 'Default Settings' or a template entry)."
         continue
     }
 

@@ -37,7 +37,7 @@ function Get-MtPuttyGroups {
 
     $path = Get-MtPuttyConfigPath
     if (-not $path) {
-        Write-Warning "MTPuTTY config not found in known locations — skipping grouping/color import (M1a: flat PuTTY sessions only)."
+        Write-Warning "MTPuTTY config not found in known locations -- skipping grouping/color import (M1a: flat PuTTY sessions only)."
         return @()
     }
 

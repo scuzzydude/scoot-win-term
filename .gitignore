@@ -10,3 +10,7 @@ mtputty_registry_dump.txt
 
 # Windows Terminal fragment output (generated, machine-specific)
 src/out/
+
+# Real API credential, generated locally by gen-windows-claude-env.sh --
+# never commit this
+src/Set-ClaudeEnv.local.ps1
