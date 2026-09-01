@@ -35,5 +35,32 @@ Code the way you want (`sn` calls it, doesn't replace it).
 
 ## Windows side
 
-PowerShell, run from `cmd.exe` or PowerShell. See `src/` — still under
-construction; scripts and usage will be documented here as they land.
+PowerShell, run from `cmd.exe` or PowerShell.
+
+**M1a — import PuTTY sessions into Windows Terminal:**
+
+```batch
+powershell -File src\Convert-PuttyToTerminal.ps1 -WhatIf
+powershell -File src\Convert-PuttyToTerminal.ps1
+```
+
+Writes a fragment JSON under
+`%LocalAppData%\Microsoft\Windows Terminal\Fragments\scoot-win-term\` —
+never touches your real `settings.json`. Re-running it updates profiles
+in place (deterministic GUIDs) instead of duplicating them.
+
+MTPuTTY's own grouping/colors aren't imported yet (M1b, format still
+unconfirmed) — only raw PuTTY registry sessions for now.
+
+**M2b — list and open live agents across your servers:**
+
+Edit `src\servers.conf` (pipe-delimited `hostname|label|color`) to list
+your AI servers, then:
+
+```batch
+powershell -File src\Start-AgentSession.ps1
+```
+
+Lists every live session across all servers (via SSH — key-based auth
+must already work, no password prompts) and opens your pick in a new
+Windows Terminal tab, attached.
