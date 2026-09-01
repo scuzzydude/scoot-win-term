@@ -33,6 +33,12 @@ if (-not $sessions -or $sessions.Count -eq 0) {
 # know M1b has something real to build against.
 Get-MtPuttyGroups | Out-Null
 
+$defaultIcon = 'ms-appx:///ProfileIcons/{9acb9455-ca41-5af7-950f-6bca1bc9722f}.png'
+$iconOverrides = @{
+    'bigmo'      = Join-Path $here 'logo\whilte_on_black_scoot.png'
+    'steve_user' = Join-Path $here 'logo\stevelogowhite.png'
+}
+
 $profiles = @()
 $schemes  = @()
 
@@ -68,7 +74,7 @@ foreach ($s in $sessions) {
         commandline = $commandLine
         tabTitle    = $s.Name
         colorScheme = $schemeName
-        icon        = 'ms-appx:///ProfileIcons/{9acb9455-ca41-5af7-950f-6bca1bc9722f}.png'
+        icon        = if ($iconOverrides.ContainsKey($s.Name)) { $iconOverrides[$s.Name] } else { $defaultIcon }
         hidden      = $false
     }
 }
