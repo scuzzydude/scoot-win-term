@@ -1,0 +1,12 @@
+# Linux agent runtime data — never commit real manifest contents
+linux-agent/.scoot-term/
+**/manifest.jsonl
+**/manifest.jsonl.lock
+
+# Windows diagnostic dumps — may contain real hostnames/session data
+*_dump.txt
+putty_sessions_dump.txt
+mtputty_registry_dump.txt
+
+# Windows Terminal fragment output (generated, machine-specific)
+src/out/
