@@ -83,8 +83,12 @@ JSONL, one object per line (chosen over a single JSON array so concurrent
 `sn` calls only need a `flock`-guarded append, not read-modify-write):
 
 ```json
-{"schema_version":1,"name":"scoot-chat","backend":"screen","backend_id":"12345.scoot-chat","attach_cmd":"screen -r 12345.scoot-chat","host":"steve","cwd":"/home/steve/scoot-chat","purpose":"fix SSE reconnect bug","color":null,"start_time":"2026-09-01T14:32:07-04:00","pid":12345}
+{"schema_version":1,"name":"scoot-chat","backend":"screen","backend_id":"12345.scoot-chat","attach_cmd":"screen -r 12345.scoot-chat","host":"steve","cwd":"/home/steve/scoot-chat","purpose":"fix SSE reconnect bug","status":"waiting on CI","color":null,"start_time":"2026-09-01T14:32:07-04:00","pid":12345}
 ```
+
+`status` is set once at `sn` time as `null`, then updated in place by
+`st` (see below) — unlike `purpose`, it's meant to be pushed again as
+work progresses.
 
 `color` is reserved (`null` in v1) for the `{key,label,color}` legend
 convention already used in Postgres (`series_legend`/`project_legend`) if
@@ -107,6 +111,14 @@ cron job is needed to keep it clean.
    attach anyway on a raw name clash — this makes that explicit instead
    of surprising).
 4. `backend_start`, write+prune the manifest line, attach.
+
+**`sl` / `st` (management interface)** — `sl` lists every live session
+(name, purpose, `status`, and real terminal-output activity via
+`backend_last_activity`, not just attach time), most recently active
+first, with a numbered shortcut to attach. `st [message]` sets the
+*current* session's `status` (found via `$STY`, screen's own
+session-id env var) so `sl` — and the Windows-side aggregator — show
+fresher progress than the one-line `purpose` captured at `sn` time.
 
 `.screenrc` gets one addition alongside the existing `hardstatus` line:
 ```
@@ -149,7 +161,8 @@ Brandon's actual Windows machine.
 - `Get-AgentManifest.ps1` — one SSH round-trip per server
   (`cat ~/.scoot-term/manifest.jsonl; echo ---LIVE---; screen -ls`),
   parses JSONL, drops stale entries against the live block.
-- `Start-AgentSession.ps1` — presents the aggregated list, on selection:
+- `Start-AgentSession.ps1` — presents the aggregated list (sorted by
+  last activity, showing `status` alongside `purpose`), on selection:
   `wt.exe new-tab --title "<name> @ <host>" --tabColor "<color>" -- ssh <host> -t "<attach_cmd>"`.
 
 ## Verification
@@ -174,6 +187,10 @@ Brandon's actual Windows machine.
    prompt hang); kill a session mid-test and confirm stale filtering
    works over SSH; run `Start-AgentSession.ps1`, confirm the new tab
    opens attached to the right session with correct title/color.
+6. **`sl`/`st`**: run `sl`, `st "testing"` from inside a session, `sl`
+   again from another shell — confirm status shows and last-touch is
+   recent; leave it idle and re-run `sl` — confirm last-touch grows
+   (proves real activity, not attach time, is being tracked).
 
 ## Known gaps carried forward (not blocking, not guessed)
 
@@ -181,8 +198,8 @@ Brandon's actual Windows machine.
   during M1b.
 - Additional AI servers beyond `steve` — need hostnames from Brandon
   before `servers.conf` can list them; architecture already supports it.
-- No "edit purpose after the fact" flow in v1 (purpose is set once, at
-  `sn` time).
+- `purpose` itself still can't be edited after `sn` time — `st`'s
+  `status` field is the fast-follow for that, not a rename of `purpose`.
 - No automated rollout of `.bashrc`/`.screenrc`/`linux-agent/` to future
   servers yet — a small installer script is a natural fast-follow once a
   second server is targeted.

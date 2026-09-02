@@ -33,6 +33,15 @@ echo 'source "$HOME/scoot-win-term/linux-agent/shell-integration.bash"' >> ~/.ba
 Requires an existing `claude()` wrapper in `.bashrc` that launches Claude
 Code the way you want (`sn` calls it, doesn't replace it).
 
+Two more commands for managing sessions once you've got several running:
+
+- `sl` — lists every live session on this server (purpose, status, and
+  how long since it last actually produced output), most recent first,
+  with a number to attach to.
+- `st [message]` — from inside a running session, sets a one-line status
+  shown by `sl` (and by `Start-AgentSession.ps1` on Windows) — use it to
+  push a progress update without re-attaching from elsewhere.
+
 ## Windows side
 
 PowerShell, run from `cmd.exe` or PowerShell.

@@ -11,8 +11,8 @@ Path to the pipe-delimited server registry. Defaults to servers.conf
 next to this script.
 
 .OUTPUTS
-PSCustomObject per live agent: Host, Label, Color, Name, Purpose, Cwd,
-AttachCmd, StartTime.
+PSCustomObject per live agent: Host, Label, Color, Name, Purpose, Status,
+Cwd, AttachCmd, StartTime, LastActivity.
 #>
 [CmdletBinding()]
 param(
@@ -46,7 +46,19 @@ function Get-ServerAgentManifest {
         [string]$Color = '#888888'
     )
 
-    $remoteCmd = 'cat ~/.scoot-term/manifest.jsonl 2>/dev/null; echo ---LIVE---; screen -ls 2>/dev/null'
+    $remoteCmd = @'
+cat ~/.scoot-term/manifest.jsonl 2>/dev/null
+echo ---LIVE---
+screen -ls 2>/dev/null
+echo ---ACTIVITY---
+if [ -f ~/scoot-win-term/linux-agent/lib/backend.sh ]; then
+  source ~/scoot-win-term/linux-agent/lib/backend.sh
+  screen -ls 2>/dev/null | awk 'match($1,/^[0-9]+\.[^ \t]+/){print substr($1,RSTART,RLENGTH)}' | while IFS= read -r id; do
+    ts=$(backend_last_activity "$id" 2>/dev/null)
+    printf '%s\t%s\n' "$id" "$ts"
+  done
+fi
+'@
     $raw = & ssh -o BatchMode=yes -o ConnectTimeout=5 $HostName $remoteCmd 2>$null
 
     if (-not $raw) {
@@ -57,10 +69,22 @@ function Get-ServerAgentManifest {
     $text = $raw -join "`n"
     $sections = $text -split '---LIVE---'
     $manifestText = $sections[0]
-    $liveText = if ($sections.Count -gt 1) { $sections[1] } else { '' }
+    $rest = if ($sections.Count -gt 1) { $sections[1] } else { '' }
+    $sections2 = $rest -split '---ACTIVITY---'
+    $liveText = $sections2[0]
+    $activityText = if ($sections2.Count -gt 1) { $sections2[1] } else { '' }
 
     $liveIds = [regex]::Matches($liveText, '(?m)^\s*(\d+\.\S+)') |
         ForEach-Object { $_.Groups[1].Value }
+
+    $activityMap = @{}
+    foreach ($aline in ($activityText -split "`n")) {
+        $aline = $aline.Trim()
+        if (-not $aline) { continue }
+        $cols = $aline -split "`t"
+        if (-not $cols[0]) { continue }
+        $activityMap[$cols[0]] = if ($cols.Count -gt 1) { $cols[1] } else { '' }
+    }
 
     $entries = @()
     foreach ($line in ($manifestText -split "`n")) {
@@ -76,15 +100,23 @@ function Get-ServerAgentManifest {
 
         if ($liveIds -notcontains $obj.backend_id) { continue }
 
+        $lastActivity = $null
+        $tsStr = $activityMap[$obj.backend_id]
+        if ($tsStr -match '^\d+$') {
+            $lastActivity = [DateTimeOffset]::FromUnixTimeSeconds([int64]$tsStr).LocalDateTime
+        }
+
         $entries += [PSCustomObject]@{
-            Host      = $HostName
-            Label     = $Label
-            Color     = $Color
-            Name      = $obj.name
-            Purpose   = $obj.purpose
-            Cwd       = $obj.cwd
-            AttachCmd = $obj.attach_cmd
-            StartTime = $obj.start_time
+            Host         = $HostName
+            Label        = $Label
+            Color        = $Color
+            Name         = $obj.name
+            Purpose      = $obj.purpose
+            Status       = $obj.status
+            Cwd          = $obj.cwd
+            AttachCmd    = $obj.attach_cmd
+            StartTime    = $obj.start_time
+            LastActivity = $lastActivity
         }
     }
 

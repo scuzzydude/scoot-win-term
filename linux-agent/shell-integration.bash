@@ -45,3 +45,90 @@ sn() {
 
   eval "$attach_cmd"
 }
+
+# _relative_time <epoch> -> "Ns"/"Nm"/"Nh"/"Nd" ago, or "?" if unknown.
+_relative_time() {
+  local ts="$1"
+  if [ -z "$ts" ] || [ "$ts" = "0" ]; then
+    echo "?"
+    return
+  fi
+  local now diff
+  now=$(date +%s)
+  diff=$(( now - ts ))
+  if [ "$diff" -lt 60 ]; then echo "${diff}s"
+  elif [ "$diff" -lt 3600 ]; then echo "$(( diff / 60 ))m"
+  elif [ "$diff" -lt 86400 ]; then echo "$(( diff / 3600 ))h"
+  else echo "$(( diff / 86400 ))d"
+  fi
+}
+
+# sl: lists live sessions (name, purpose, status, last real output
+# activity), most recently active first, with a shortcut to attach.
+sl() {
+  manifest_prune
+
+  local -a rows=()
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    local id
+    id=$(_json_field "$line" backend_id)
+    [ -z "$id" ] && continue
+    backend_is_alive "$id" || continue
+
+    local name purpose status ts
+    name=$(_json_field "$line" name)
+    purpose=$(_json_field "$line" purpose)
+    status=$(_json_field "$line" status)
+    ts=$(backend_last_activity "$id")
+    [ -z "$ts" ] && ts=0
+
+    rows+=("$ts"$'\t'"$id"$'\t'"$name"$'\t'"$purpose"$'\t'"$status")
+  done < "$SCOOT_TERM_MANIFEST"
+
+  if [ "${#rows[@]}" -eq 0 ]; then
+    echo "No live sessions."
+    return
+  fi
+
+  local sorted
+  sorted=$(printf '%s\n' "${rows[@]}" | sort -t $'\t' -k1,1nr)
+
+  local -a ids=()
+  local i=0
+  echo ""
+  while IFS=$'\t' read -r ts id name purpose status; do
+    local ago suffix=""
+    ago=$(_relative_time "$ts")
+    [ -n "$purpose" ] && suffix="$suffix - $purpose"
+    [ -n "$status" ] && suffix="$suffix [$status]"
+    printf '[%d] %s (%s ago)%s\n' "$i" "$name" "$ago" "$suffix"
+    ids[$i]="$id"
+    i=$((i + 1))
+  done <<< "$sorted"
+  echo ""
+
+  local choice
+  read -r -p "Attach to # (Enter to skip): " choice
+  [ -z "$choice" ] && return
+  if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -lt "${#ids[@]}" ]; then
+    eval "$(backend_attach_cmd "${ids[$choice]}")"
+  else
+    echo "sl: invalid choice" >&2
+  fi
+}
+
+# st [message]: sets the current session's status (shown by `sl` and by
+# the Windows-side aggregator). Must be run from inside a running
+# session -- uses $STY (screen's own session-id env var) to find it.
+st() {
+  if [ -z "$STY" ]; then
+    echo "st: not running inside a scoot-term session" >&2
+    return 1
+  fi
+  local msg="$*"
+  if [ -z "$msg" ]; then
+    read -r -p "Status: " msg
+  fi
+  manifest_set_status "$STY" "$msg"
+}
