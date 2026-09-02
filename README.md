@@ -14,7 +14,8 @@ src/           PowerShell: PuTTY/MTPuTTY -> Windows Terminal converter,
 ```
 
 See `PLAN.md` for the full design (architecture, manifest schema,
-session-backend abstraction, milestones, verification steps).
+session-backend abstraction, milestones, verification steps), and
+`README_2nd_PC.md` for setting this up on an additional Windows machine.
 
 ## Linux agent
 
