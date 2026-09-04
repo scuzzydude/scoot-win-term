@@ -51,6 +51,7 @@ $defaultIcon = 'ms-appx:///ProfileIcons/{9acb9455-ca41-5af7-950f-6bca1bc9722f}.p
 $iconOverrides = @{
     'bigmo'      = Join-Path $here 'logo\whilte_on_black_scoot.png'
     'steve_user' = Join-Path $here 'logo\stevelogowhite.png'
+    'steve'      = Join-Path $here 'logo\stevelogowhite.png'
 }
 
 $profiles = @()
