@@ -6,13 +6,19 @@ fragment (profiles + color schemes). Never touches settings.json.
 .PARAMETER WhatIf
 Print the fragment JSON instead of writing it.
 
+.PARAMETER Include
+Only convert PuTTY sessions with these names (case-insensitive). Omit to
+convert every saved session.
+
 .EXAMPLE
 .\Convert-PuttyToTerminal.ps1 -WhatIf
 .\Convert-PuttyToTerminal.ps1
+.\Convert-PuttyToTerminal.ps1 -Include steve,bigmo
 #>
 [CmdletBinding()]
 param(
-    [switch]$WhatIf
+    [switch]$WhatIf,
+    [string[]]$Include
 )
 
 $here = $PSScriptRoot
@@ -27,6 +33,14 @@ $sessions = Get-PuttySessions
 if (-not $sessions -or $sessions.Count -eq 0) {
     Write-Warning "No PuTTY sessions found. Nothing to convert."
     return
+}
+
+if ($Include) {
+    $sessions = $sessions | Where-Object { $_.Name -in $Include }
+    if (-not $sessions -or $sessions.Count -eq 0) {
+        Write-Warning "None of the requested session(s) ($($Include -join ', ')) were found among saved PuTTY sessions."
+        return
+    }
 }
 
 # Informational only in M1a — logs whether MTPuTTY data exists so we
