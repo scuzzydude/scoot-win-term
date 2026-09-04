@@ -65,12 +65,14 @@ _relative_time() {
 
 # _sls_recent_claude_dirs [limit]: prints "<mtime>\t<dir>" for the most
 # recently touched Claude Code project directories, most recent first,
-# deduped, capped at `limit` (default 10). Reads Claude Code's own
-# session store directly (~/.claude/projects/<encoded-dir>/<id>.jsonl),
-# not scoot-win-term's manifest -- each session file's first "cwd" field
-# is its real, unencoded working directory.
+# deduped, capped at `limit` (default 200 -- a safety cap, not a display
+# limit; _sls_resume_from_history pages through this list 10 at a time).
+# Reads Claude Code's own session store directly
+# (~/.claude/projects/<encoded-dir>/<id>.jsonl), not scoot-win-term's
+# manifest -- each session file's first "cwd" field is its real,
+# unencoded working directory.
 _sls_recent_claude_dirs() {
-  local limit="${1:-10}"
+  local limit="${1:-200}"
   local count=0
   local mtime path cwd
   while IFS=$'\t' read -r mtime path; do
@@ -85,39 +87,58 @@ _sls_recent_claude_dirs() {
   unset _sls_seen_dirs
 }
 
-# _sls_resume_from_history: numbered list of recent Claude Code project
-# directories; picking one starts a fresh screen session there running
+# _sls_resume_from_history: numbered, paged (10 at a time) list of every
+# Claude Code project directory on record, oldest reachable via 'm' for
+# more; picking one starts a fresh screen session there running
 # `claude --continue`. Deliberately not written to manifest.jsonl -- this
 # path exists precisely to work outside that system.
 _sls_resume_from_history() {
   local -a dirs=() times=()
-  local i=0
+  local total=0
   while IFS=$'\t' read -r mtime dir; do
-    dirs[$i]="$dir"
-    times[$i]="$mtime"
-    i=$((i + 1))
-  done < <(_sls_recent_claude_dirs 10)
+    dirs[$total]="$dir"
+    times[$total]="$mtime"
+    total=$((total + 1))
+  done < <(_sls_recent_claude_dirs)
 
-  if [ "$i" -eq 0 ]; then
+  if [ "$total" -eq 0 ]; then
     echo "No Claude Code session history found."
     return
   fi
 
-  echo ""
-  local j=0
-  while [ "$j" -lt "$i" ]; do
-    printf '[%d] %s (%s ago)\n' "$j" "${dirs[$j]}" "$(_relative_time "${times[$j]%.*}")"
-    j=$((j + 1))
-  done
-  echo ""
-
+  local page_size=10
+  local offset=0
   local choice
-  read -r -p "Resume # with claude --continue (Enter to skip): " choice
-  [ -z "$choice" ] && return
-  if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -ge "$i" ]; then
-    echo "sls: invalid choice" >&2
-    return
-  fi
+  while :; do
+    local end=$(( offset + page_size ))
+    [ "$end" -gt "$total" ] && end="$total"
+
+    echo ""
+    local j="$offset" ts
+    while [ "$j" -lt "$end" ]; do
+      ts="${times[$j]%.*}"
+      printf '[%d] %s (%s, %s ago)\n' "$j" "${dirs[$j]}" \
+        "$(date -d "@$ts" '+%Y-%m-%d %H:%M' 2>/dev/null)" "$(_relative_time "$ts")"
+      j=$((j + 1))
+    done
+    echo ""
+
+    local prompt="Resume # with claude --continue"
+    [ "$end" -lt "$total" ] && prompt="$prompt, 'm' for more"
+    read -r -p "$prompt (Enter to skip): " choice
+
+    if [ -z "$choice" ]; then
+      return
+    elif [ "$choice" = "m" ] && [ "$end" -lt "$total" ]; then
+      offset="$end"
+      continue
+    elif [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -lt "$total" ]; then
+      break
+    else
+      echo "sls: invalid choice" >&2
+      return
+    fi
+  done
 
   local dir="${dirs[$choice]}"
   if [ ! -d "$dir" ]; then
