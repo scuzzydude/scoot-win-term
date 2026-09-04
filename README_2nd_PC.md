@@ -201,7 +201,7 @@ you like — it becomes the Windows Terminal tab color.
 
 ## 8. End-to-end check
 
-Make sure the Linux side is current first — the `sl`/`st` commands and
+Make sure the Linux side is current first — the `sls`/`st` commands and
 the activity reporting the Windows side reads are recent additions:
 
 ```bash
@@ -228,7 +228,7 @@ Anything missing, in order of likelihood:
 |---|---|
 | `No response from '<host>'` | `ssh -o BatchMode=yes <host> echo ok` fails — step 4 |
 | Host missing from the list entirely | not in `servers.conf` — step 7 |
-| Sessions listed but last-activity shows `-` | that server hasn't pulled the `sl`/`st` commit, or the clone isn't at `~/scoot-win-term` (the path the Windows side sources `backend.sh` from) |
+| Sessions listed but last-activity shows `-` | that server hasn't pulled the `sls`/`st` commit, or the clone isn't at `~/scoot-win-term` (the path the Windows side sources `backend.sh` from) |
 | Session missing but you know it's running | it was started before that server pulled, so its manifest line predates the change — start a fresh one with `sn` |
 
 ---

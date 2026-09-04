@@ -3,27 +3,35 @@
 
 screen_start() {
   local name="$1"
+  local cmd="${2:-claude}"
   command screen -dmS "$name"
-  # Type "claude" into the fresh session as if the user had, so it goes
-  # through the existing claude() wrapper in .bashrc exactly as today
-  # (same --name, same --dangerously-skip-permissions).
-  command screen -S "$name" -X stuff "claude$(printf '\r')"
+  # Type the command into the fresh session as if the user had, so it
+  # goes through the existing claude() wrapper in .bashrc exactly as
+  # today (same --name, same --dangerously-skip-permissions). Defaults
+  # to "claude"; callers resuming a prior conversation pass
+  # "claude --continue" instead.
+  command screen -S "$name" -X stuff "$cmd$(printf '\r')"
   screen_id_for_name "$name"
 }
 
 # Prints the "pid.name" token screen uses to address a session.
+# screen -ls separates fields with tabs (line starts with a leading tab,
+# so $1 is empty and the "pid.name" token is $2) — using the default
+# whitespace field splitter here would truncate any session name that
+# contains a space at the first space.
 screen_id_for_name() {
   local name="$1"
-  command screen -ls 2>/dev/null | awk -v n="$name" '
-    match($1, /^([0-9]+)\.(.*)$/, m) && m[2] == n { print $1 }
+  command screen -ls 2>/dev/null | awk -F'\t' -v n="$name" '
+    match($2, /^([0-9]+)\.(.*)$/, m) && m[2] == n { print $2 }
   '
 }
 
 screen_list() {
-  command screen -ls 2>/dev/null | awk '
-    match($1, /^([0-9]+)\.(.*)$/, m) {
+  command screen -ls 2>/dev/null | awk -F'\t' '
+    match($2, /^([0-9]+)\.(.*)$/, m) {
       alive = ($0 ~ /\(Dead/) ? 0 : 1
-      print $1 "\t" m[2] "\t" alive
+      attached = ($0 ~ /\(Attached/) ? 1 : 0
+      print $2 "\t" m[2] "\t" alive "\t" attached
     }
   '
 }

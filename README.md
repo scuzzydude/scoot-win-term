@@ -36,12 +36,17 @@ Code the way you want (`sn` calls it, doesn't replace it).
 
 Two more commands for managing sessions once you've got several running:
 
-- `sl` — lists every live session on this server (purpose, status, and
-  how long since it last actually produced output), most recent first,
-  with a number to attach to.
+- `sls` — lists every live `screen` session on this server straight from
+  `screen -ls` (no manifest involved), with a number to attach to;
+  automatically does `-d -r` instead of a plain `-r` for a session
+  that's attached elsewhere, so taking it over never just errors out. If
+  nothing's live — or you pick the trailing "session history" entry —
+  it falls back to the last 10 directories Claude Code actually ran in
+  (from Claude Code's own session store) and starts `claude --continue`
+  in whichever one you pick.
 - `st [message]` — from inside a running session, sets a one-line status
-  shown by `sl` (and by `Start-AgentSession.ps1` on Windows) — use it to
-  push a progress update without re-attaching from elsewhere.
+  shown by `Start-AgentSession.ps1` on Windows — use it to push a
+  progress update without re-attaching from elsewhere.
 
 ## Windows side
 
