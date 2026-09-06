@@ -266,6 +266,20 @@ events_adopt() {
   return 0
 }
 
+# events_tree: hand off to scoot-rim-agentd's tree view when it is installed.
+# Kept as a thin delegation rather than a second implementation in bash: the
+# Python side owns ownership/policy resolution, and duplicating it here would
+# guarantee the two drift.
+SCOOT_RIM_AGENTD="${SCOOT_RIM_AGENTD:-$HOME/scoot-rim-agentd/scoot-rim-agentd}"
+events_tree() {
+  if [ -x "$SCOOT_RIM_AGENTD" ]; then
+    "$SCOOT_RIM_AGENTD" tree
+  else
+    echo "tree needs scoot-rim-agentd (not found at $SCOOT_RIM_AGENTD); showing flat list" >&2
+    events_replay
+  fi
+}
+
 # events_doctor: is this registry trustworthy enough to gate on?
 # Reports three classes and exits non-zero if any are outstanding.
 events_doctor() {

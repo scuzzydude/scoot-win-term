@@ -19,6 +19,8 @@ usage: scoot-rim <command>
 
   live               Sessions that started and have not exited (the recovery
                      set). Columns: backend_id, name, cwd, agent_session_id.
+  tree               Same set as a tree grouped by position, annotated with each
+                     node's ownership policy. Delegates to scoot-rim-agentd.
   doctor             Is the registry complete enough to gate on? Reports
                      MISSING (live, not logged), STALE (logged, backend gone)
                      and UNBOUND (no agent_session_id). Non-zero if any.
@@ -46,6 +48,8 @@ EOF
 cmd_live() { events_replay; }
 
 cmd_doctor() { events_doctor; }
+
+cmd_tree() { events_tree; }
 
 cmd_register() {
   if events_register_self; then
@@ -134,6 +138,7 @@ cmd_tail() {
 case "${1:-}" in
   live)         shift; cmd_live "$@" ;;
   doctor)       shift; cmd_doctor "$@" ;;
+  tree)         shift; cmd_tree "$@" ;;
   register)     shift; cmd_register "$@" ;;
   adopt)        shift; cmd_adopt "$@" ;;
   reconcile)    shift; cmd_reconcile "$@" ;;
