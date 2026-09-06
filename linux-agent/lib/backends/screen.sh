@@ -41,9 +41,14 @@ screen_attach_cmd() {
   echo "screen -r ${id}"
 }
 
+# Same tab-splitting requirement as screen_id_for_name/screen_list above: with
+# the default whitespace splitter, $1 is the leading-tab-trimmed "pid.name"
+# truncated at its first space, so any session whose name contains a space
+# ("1032932.Bridge SIM") was reported dead while alive. That made
+# manifest_prune drop it and sls treat it as gone.
 screen_is_alive() {
   local id="$1"
-  command screen -ls 2>/dev/null | awk -v id="$id" '$1 == id { found=1 } END { exit found ? 0 : 1 }'
+  command screen -ls 2>/dev/null | awk -F'\t' -v id="$id" '$2 == id { found=1 } END { exit found ? 0 : 1 }'
 }
 
 # screen_last_activity <id> -> epoch seconds of last output on that

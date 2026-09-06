@@ -147,6 +147,161 @@ events_bind_agent_session() {
 }
 
 # ---------------------------------------------------------------------------
+# Completeness: registration and adoption
+#
+# The log is only complete if every live session appears in it. Sessions
+# launched by sn do; anything started another way (plain `claude` in a hand-made
+# screen, a session predating this log) does not -- and a registry that misses
+# sessions cannot be gated on, because the gate fails OPEN for exactly the
+# sessions it does not know about.
+#
+# Two ways in, and they differ in what they can know:
+#
+#   register  -- run from INSIDE a session. Exact: $STY is the screen id and
+#                $CLAUDE_CODE_SESSION_ID is the agent's own session id.
+#   adopt     -- run from OUTSIDE. Best effort: the screen id and (via
+#                /proc/<pid>/cwd) the launch directory, but NOT the agent
+#                session id.
+#
+# Why adopt cannot get the agent id, having tried: the agent does not keep its
+# conversation file open (so /proc/<pid>/fd is empty of it), does not carry
+# CLAUDE_CODE_SESSION_ID in its own environ (it exports it to children), and
+# encoding cwd -> project dir breaks whenever a directory was renamed after the
+# session started -- which has happened here. So adopted sessions are recorded
+# honestly as unbound, and `doctor` reports them as such.
+# ---------------------------------------------------------------------------
+
+# events_is_live <backend_id> -> 0 if the log currently considers it live.
+events_is_live() {
+  local want="$1" bid rest
+  while IFS=$'\t' read -r bid rest; do
+    [ "$bid" = "$want" ] && return 0
+  done < <(events_replay)
+  return 1
+}
+
+# events_has_agent_binding <backend_id> -> 0 if an agent id is known for it.
+events_has_agent_binding() {
+  local want="$1" bid name cwd agent
+  while IFS=$'\t' read -r bid name cwd agent; do
+    if [ "$bid" = "$want" ] && [ -n "$agent" ] && [ "$agent" != "-" ]; then
+      return 0
+    fi
+  done < <(events_replay)
+  return 1
+}
+
+# _rim_pid_cwd <pid> -> launch directory of that process, empty if unreadable.
+# Strips the " (deleted)" suffix the kernel appends when the directory has since
+# been removed or replaced. Keeping it would produce a path that cannot be cd'd
+# to; stripping it lets restore-plan's own existence check SKIP the session
+# properly instead of emitting a broken command. Two live sessions here are in
+# that state, so this is not hypothetical.
+_rim_pid_cwd() {
+  local pid="$1" cwd
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 0
+  cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null)" || return 0
+  printf '%s' "${cwd% (deleted)}"
+}
+
+# events_register_self: called from inside a session. Idempotent -- adds only
+# what is missing, so it is safe to run on every shell startup.
+# Returns 0 if it wrote anything, 1 if there was nothing to do.
+events_register_self() {
+  local bid="${STY:-}" agent="${CLAUDE_CODE_SESSION_ID:-}" name cwd wrote=1
+
+  if [ -z "$bid" ]; then
+    echo "register: no \$STY -- not inside a session backend" >&2
+    return 2
+  fi
+  name="${bid#*.}"
+
+  # The screen process's cwd is the launch directory, which is more canonical
+  # than the caller's $PWD (a shell inside the session may have cd'd away).
+  cwd="$(_rim_pid_cwd "${bid%%.*}")"
+  [ -z "$cwd" ] && cwd="$PWD"
+
+  if ! events_is_live "$bid"; then
+    event_append session_start \
+      name "$name" \
+      backend "${SCOOT_TERM_BACKEND:-screen}" \
+      backend_id "$bid" \
+      cwd "$cwd" \
+      pid "${bid%%.*}" \
+      origin "self-registered"
+    wrote=0
+  fi
+
+  if [ -n "$agent" ] && ! events_has_agent_binding "$bid"; then
+    event_append agent_bound \
+      backend_id "$bid" \
+      agent_session_id "$agent" \
+      cwd "$cwd" \
+      origin "self-registered"
+    wrote=0
+  fi
+
+  return "$wrote"
+}
+
+# events_adopt: record live backend sessions the log doesn't know about.
+# Prints one line per adoption. Cannot supply an agent id (see header).
+events_adopt() {
+  local adopted=0 bid name alive attached cwd
+  while IFS=$'\t' read -r bid name alive attached; do
+    [ "$alive" = "1" ] || continue
+    events_is_live "$bid" && continue
+    cwd="$(_rim_pid_cwd "${bid%%.*}")"
+    event_append session_start \
+      name "$name" \
+      backend "${SCOOT_TERM_BACKEND:-screen}" \
+      backend_id "$bid" \
+      cwd "$cwd" \
+      pid "${bid%%.*}" \
+      origin "adopted" \
+      note "discovered live; agent_session_id unknown -- run 'scoot-rim register' inside it"
+    printf 'adopted\t%s\t%s\t%s\n' "$bid" "$name" "${cwd:-<cwd unknown>}"
+    adopted=$((adopted + 1))
+  done < <(backend_list)
+  return 0
+}
+
+# events_doctor: is this registry trustworthy enough to gate on?
+# Reports three classes and exits non-zero if any are outstanding.
+events_doctor() {
+  local missing=0 stale=0 unbound=0
+  local bid name alive attached cwd agent
+
+  while IFS=$'\t' read -r bid name alive attached; do
+    [ "$alive" = "1" ] || continue
+    if ! events_is_live "$bid"; then
+      printf 'MISSING   %s (%s) -- live but not in log; run: scoot-rim adopt\n' "$bid" "$name"
+      missing=$((missing + 1))
+    fi
+  done < <(backend_list)
+
+  while IFS=$'\t' read -r bid name cwd agent; do
+    [ -z "$bid" ] && continue
+    if ! backend_is_alive "$bid" 2>/dev/null; then
+      printf 'STALE     %s (%s) -- in log but backend gone; run: scoot-rim reconcile\n' "$bid" "$name"
+      stale=$((stale + 1))
+    elif [ "$agent" = "-" ] || [ -z "$agent" ]; then
+      printf 'UNBOUND   %s (%s) -- no agent_session_id; restore would be approximate.\n' "$bid" "$name"
+      printf '                    fix: run "scoot-rim register" inside that session\n'
+      unbound=$((unbound + 1))
+    fi
+  done < <(events_replay)
+
+  printf '\n%d missing, %d stale, %d unbound\n' "$missing" "$stale" "$unbound"
+  if [ "$missing" -eq 0 ] && [ "$stale" -eq 0 ] && [ "$unbound" -eq 0 ]; then
+    echo "registry complete — safe to gate on"
+    return 0
+  fi
+  echo "registry INCOMPLETE — a gate consulting it would fail open for the above"
+  return 1
+}
+
+# ---------------------------------------------------------------------------
 # Fold and reconcile
 # ---------------------------------------------------------------------------
 

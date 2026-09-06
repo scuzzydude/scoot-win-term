@@ -19,6 +19,15 @@ usage: scoot-rim <command>
 
   live               Sessions that started and have not exited (the recovery
                      set). Columns: backend_id, name, cwd, agent_session_id.
+  doctor             Is the registry complete enough to gate on? Reports
+                     MISSING (live, not logged), STALE (logged, backend gone)
+                     and UNBOUND (no agent_session_id). Non-zero if any.
+  register           Run INSIDE a session: records it exactly, using $STY and
+                     $CLAUDE_CODE_SESSION_ID. Idempotent — safe on every shell
+                     startup, and the only way to capture the agent id.
+  adopt              Run OUTSIDE: record live sessions the log doesn't know.
+                     Best effort — cannot supply an agent id, so adopted
+                     sessions show as UNBOUND until 'register' runs in them.
   reconcile          Emit session_exit for anything the log thinks is live but
                      the backend says is gone. Prints how many it closed.
                      Safe to run on a timer; does nothing when nothing changed.
@@ -35,6 +44,29 @@ EOF
 }
 
 cmd_live() { events_replay; }
+
+cmd_doctor() { events_doctor; }
+
+cmd_register() {
+  if events_register_self; then
+    echo "registered $STY"
+  else
+    local rc=$?
+    [ "$rc" = "2" ] && return 2
+    echo "already registered ${STY:-?} — nothing to add"
+  fi
+}
+
+cmd_adopt() {
+  local out; out="$(events_adopt)"
+  if [ -n "$out" ]; then
+    printf '%s\n' "$out"
+    printf '%s adopted; run "scoot-rim register" inside each to bind its agent id\n' \
+      "$(printf '%s\n' "$out" | grep -c '^adopted')"
+  else
+    echo "nothing to adopt — every live session is already in the log"
+  fi
+}
 
 cmd_reconcile() {
   local n; n="$(events_reconcile)"
@@ -101,6 +133,9 @@ cmd_tail() {
 
 case "${1:-}" in
   live)         shift; cmd_live "$@" ;;
+  doctor)       shift; cmd_doctor "$@" ;;
+  register)     shift; cmd_register "$@" ;;
+  adopt)        shift; cmd_adopt "$@" ;;
   reconcile)    shift; cmd_reconcile "$@" ;;
   restore-plan) shift; cmd_restore_plan "$@" ;;
   open)         shift; cmd_open "$@" ;;

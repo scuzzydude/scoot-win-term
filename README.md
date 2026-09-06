@@ -62,11 +62,36 @@ with a `session_start` and no `session_exit` was live at shutdown.
 
 ```bash
 linux-agent/scoot-rim live          # the recovery set: started, not exited
+linux-agent/scoot-rim doctor        # is the registry complete enough to trust?
+linux-agent/scoot-rim register      # run INSIDE a session — records it exactly
+linux-agent/scoot-rim adopt         # run OUTSIDE — pick up sessions not in the log
 linux-agent/scoot-rim restore-plan  # what a reboot recovery WOULD run (prints only)
 linux-agent/scoot-rim reconcile     # close sessions the backend says are gone
 linux-agent/scoot-rim open          # defer/escalate with no resume/decide
 linux-agent/scoot-rim tail 20
 ```
+
+**Completeness.** A log that misses sessions is worse than no log, because
+anything consulting it silently gets the wrong answer for exactly the sessions it
+doesn't know about. `doctor` reports the three ways it can be incomplete —
+MISSING (live but unlogged), STALE (logged but gone), UNBOUND (no agent id) —
+and exits non-zero while any remain.
+
+Two ways in, differing in what they can know:
+
+- **`register`**, from *inside* a session, is exact: `$STY` is the backend id and
+  `$CLAUDE_CODE_SESSION_ID` is the agent's own session id. Idempotent, so it's
+  safe to run on every shell startup — and it is the **only** way to capture the
+  agent id.
+- **`adopt`**, from *outside*, is best effort: backend id and launch directory
+  (via `/proc/<pid>/cwd`), but **not** the agent id. Adopted sessions show as
+  UNBOUND until `register` runs inside them.
+
+`adopt` can't get the agent id, and this was established by trying: the agent
+doesn't hold its conversation file open, doesn't carry
+`CLAUDE_CODE_SESSION_ID` in its own environ (it exports it to children), and
+encoding cwd → project dir breaks once a directory has been renamed after the
+session started — which has happened here.
 
 Two things worth knowing:
 
