@@ -48,6 +48,41 @@ Two more commands for managing sessions once you've got several running:
   shown by `Start-AgentSession.ps1` on Windows — use it to push a
   progress update without re-attaching from elsewhere.
 
+### Event log (`scoot-rim`)
+
+`manifest.jsonl` answers *"what can I attach to right now"* — it's a snapshot,
+and an ended session is simply dropped from it. That's the wrong shape for
+*"what was running before the host rebooted, and what was left unfinished"*.
+
+So alongside it, `~/.scoot-rim/events.jsonl` records **transitions** rather than
+state: `session_start`, `agent_bound`, `session_exit`, plus optional
+`claim`/`release`/`handoff`/`defer`/`resume`/`escalate`/`decide`. Current state is
+a fold over the log, so restart recovery needs no separate mechanism — anything
+with a `session_start` and no `session_exit` was live at shutdown.
+
+```bash
+linux-agent/scoot-rim live          # the recovery set: started, not exited
+linux-agent/scoot-rim restore-plan  # what a reboot recovery WOULD run (prints only)
+linux-agent/scoot-rim reconcile     # close sessions the backend says are gone
+linux-agent/scoot-rim open          # defer/escalate with no resume/decide
+linux-agent/scoot-rim tail 20
+```
+
+Two things worth knowing:
+
+- **`reconcile` is required, not optional.** `sn` returns when you *detach*, not
+  when the session ends, and a killed session never logs its own exit. Without a
+  periodic `reconcile` (cron/systemd timer), dead sessions look live forever.
+- **`agent_bound` is what makes restore meaningful.** Resuming by *directory*
+  (`claude --continue`) picks the most recent conversation there, which is wrong
+  once a directory has hosted several. `sn` snapshots the existing conversation
+  ids before launch and a detached watcher records the *new* one, so
+  `restore-plan` can emit `claude --resume <id>`. Where no id was captured it
+  falls back to `--continue` and labels that line APPROXIMATE.
+
+Design rationale lives outside this repo (it's the first step of a planned
+`scoot-rim-agentd` service); this layer deliberately needs no daemon.
+
 ## Windows side
 
 PowerShell, run from `cmd.exe` or PowerShell.

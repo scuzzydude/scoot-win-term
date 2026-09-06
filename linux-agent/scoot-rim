@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# scoot-rim: read/maintain the agent-session event log.
+#
+# Standalone CLI so the log is inspectable and reconcilable without an
+# interactive shell -- which is what lets a timer (cron/systemd) call
+# `scoot-rim reconcile`, and what a future scoot-rim-agentd replaces.
+#
+# See lib/events.sh for the design rationale.
+
+set -uo pipefail
+
+SCOOT_RIM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCOOT_RIM_DIR/lib/backend.sh"
+source "$SCOOT_RIM_DIR/lib/events.sh"
+
+usage() {
+  cat <<'EOF'
+usage: scoot-rim <command>
+
+  live               Sessions that started and have not exited (the recovery
+                     set). Columns: backend_id, name, cwd, agent_session_id.
+  reconcile          Emit session_exit for anything the log thinks is live but
+                     the backend says is gone. Prints how many it closed.
+                     Safe to run on a timer; does nothing when nothing changed.
+  restore-plan       What a reboot recovery WOULD do, as commands. Prints only;
+                     never acts. Sessions with a known agent_session_id resume
+                     that conversation; ones without fall back to --continue
+                     (resume-by-directory), which is flagged as approximate.
+  open               Deferred/escalated items with no matching resume/decide.
+  event <type> [k v] Append an arbitrary event (claim, release, handoff,
+                     defer, resume, escalate, decide, ...).
+  tail [n]           Last n events, newest last (default 20).
+  path               Where the log lives.
+EOF
+}
+
+cmd_live() { events_replay; }
+
+cmd_reconcile() {
+  local n; n="$(events_reconcile)"
+  if [ "${n:-0}" -gt 0 ]; then
+    echo "closed $n stale session(s)"
+  else
+    echo "nothing to reconcile"
+  fi
+}
+
+# Prints the plan only. Restoring for real is deliberately not implemented here:
+# it belongs in the daemon, where it can be gated and logged as an action rather
+# than run from an interactive shell by accident.
+cmd_restore_plan() {
+  local bid name cwd agent any=0
+  while IFS=$'\t' read -r bid name cwd agent; do
+    [ -z "$bid" ] && continue
+    any=1
+    if [ ! -d "$cwd" ]; then
+      printf '# SKIP %s — cwd no longer exists: %s\n' "$name" "$cwd"
+      continue
+    fi
+    if [ "$agent" = "-" ]; then
+      printf '# %s — no agent_session_id captured; resume-by-directory is APPROXIMATE\n' "$name"
+      printf '(cd %q && screen -dmS %q && screen -S %q -X stuff %q)\n' \
+        "$cwd" "$name" "$name" "claude --continue$(printf '\r')"
+    else
+      printf '(cd %q && screen -dmS %q && screen -S %q -X stuff %q)\n' \
+        "$cwd" "$name" "$name" "claude --resume $agent$(printf '\r')"
+    fi
+  done < <(events_replay)
+  [ "$any" -eq 0 ] && echo "# nothing to restore"
+  return 0
+}
+
+# defer/escalate without a matching resume/decide. These are the items most
+# likely to be silently lost across a context turnover or a reboot.
+cmd_open() {
+  events_init
+  awk -F'"' '
+    function field(line, key,   n, parts, i) {
+      n = split(line, parts, "\"")
+      for (i = 1; i <= n; i++) if (parts[i] == key) return parts[i + 2]
+      return ""
+    }
+    {
+      ev = field($0, "event")
+      if (ev == "defer")    { item[field($0, "item")] = $0 }
+      if (ev == "resume")   { delete item[field($0, "item")] }
+      if (ev == "escalate") { q[field($0, "question")] = $0 }
+      if (ev == "decide")   { delete q[field($0, "question")] }
+    }
+    END {
+      for (k in item) printf "DEFERRED   %s\n", k
+      for (k in q)    printf "ESCALATED  %s\n", k
+    }
+  ' "$SCOOT_RIM_EVENTS"
+}
+
+cmd_tail() {
+  events_init
+  tail -n "${1:-20}" "$SCOOT_RIM_EVENTS"
+}
+
+case "${1:-}" in
+  live)         shift; cmd_live "$@" ;;
+  reconcile)    shift; cmd_reconcile "$@" ;;
+  restore-plan) shift; cmd_restore_plan "$@" ;;
+  open)         shift; cmd_open "$@" ;;
+  event)        shift; [ "$#" -ge 1 ] || { usage; exit 1; }; event_append "$@" ;;
+  tail)         shift; cmd_tail "$@" ;;
+  path)         echo "$SCOOT_RIM_EVENTS" ;;
+  ''|-h|--help|help) usage ;;
+  *) echo "scoot-rim: unknown command '$1'" >&2; usage; exit 1 ;;
+esac

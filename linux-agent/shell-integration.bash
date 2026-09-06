@@ -6,6 +6,7 @@
 SCOOT_TERM_AGENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCOOT_TERM_AGENT_DIR/lib/backend.sh"
 source "$SCOOT_TERM_AGENT_DIR/lib/manifest.sh"
+source "$SCOOT_TERM_AGENT_DIR/lib/events.sh"
 
 sn() {
   local default_name
@@ -28,6 +29,11 @@ sn() {
   local purpose
   read -r -p "Purpose (optional, Enter to skip): " purpose
 
+  # Snapshot the agent's existing conversation ids for this cwd BEFORE launch,
+  # so the binder can tell the new one from any that already existed here.
+  local pre_sessions
+  pre_sessions="$(events_snapshot_sessions "$PWD")"
+
   local backend_id
   backend_id="$(backend_start "$name")"
   if [ -z "$backend_id" ]; then
@@ -42,6 +48,15 @@ sn() {
 
   manifest_append "$name" "$SCOOT_TERM_BACKEND" "$backend_id" "$attach_cmd" "$PWD" "$purpose" "$pid"
   manifest_prune
+
+  event_append session_start \
+    name "$name" \
+    backend "$SCOOT_TERM_BACKEND" \
+    backend_id "$backend_id" \
+    cwd "$PWD" \
+    purpose "$purpose" \
+    pid "$pid"
+  events_bind_agent_session "$backend_id" "$PWD" "$pre_sessions"
 
   eval "$attach_cmd"
 }
