@@ -41,6 +41,67 @@ screen_attach_cmd() {
   echo "screen -r ${id}"
 }
 
+# screen_cwd <id> -> real working directory of the foreground `claude`
+# process in that window. The pid in "pid.name" is the window's shell, not
+# claude itself (screen -> shell -> claude), so walk down the process tree
+# looking for the `claude` binary rather than assuming a fixed depth. Empty
+# if the process is gone or the tree doesn't look like that.
+#
+# Forks `ps` per hop, which is fine for a single lookup but far too slow
+# across a whole session listing (~150ms x N hops x N sessions) -- use
+# screen_cwd_bulk for that instead.
+screen_cwd() {
+  local id="$1"
+  local pid="${id%%.*}"
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 0
+  local hops=0
+  while [ "$hops" -lt 4 ] && [ "$(command ps -o comm= -p "$pid" 2>/dev/null)" != "claude" ]; do
+    local next
+    next=$(command ps --ppid "$pid" -o pid= 2>/dev/null | awk 'NR==1{print $1}')
+    [ -z "$next" ] && return 0
+    pid="$next"
+    hops=$((hops + 1))
+  done
+  local cwd
+  cwd=$(command readlink -f "/proc/$pid/cwd" 2>/dev/null) || return 0
+  # A directory that was deleted/replaced after the process started still
+  # resolves here, just with this suffix appended by the kernel.
+  printf '%s\n' "${cwd% (deleted)}"
+}
+
+# screen_cwd_bulk: reads "pid.name" ids on stdin, one per line; prints
+# "<id>\t<cwd>" for each, in input order. Same descend-to-claude logic as
+# screen_cwd, but against a single `ps -eo pid,ppid,comm` snapshot instead
+# of forking ps per hop per session -- the whole point of this variant.
+screen_cwd_bulk() {
+  local -A ppid_of=() comm_of=() first_child=()
+  local pid ppid comm
+  while read -r pid ppid comm; do
+    ppid_of["$pid"]="$ppid"
+    comm_of["$pid"]="$comm"
+    [ -n "${first_child[$ppid]:-}" ] || first_child["$ppid"]="$pid"
+  done < <(command ps -eo pid=,ppid=,comm= 2>/dev/null)
+
+  local id
+  while IFS= read -r id; do
+    pid="${id%%.*}"
+    if ! [[ "$pid" =~ ^[0-9]+$ ]]; then
+      printf '%s\t\n' "$id"
+      continue
+    fi
+    local hops=0
+    while [ "$hops" -lt 4 ] && [ "${comm_of[$pid]:-}" != "claude" ]; do
+      local next="${first_child[$pid]:-}"
+      [ -z "$next" ] && { pid=""; break; }
+      pid="$next"
+      hops=$((hops + 1))
+    done
+    local cwd=""
+    [ -n "$pid" ] && cwd=$(command readlink -f "/proc/$pid/cwd" 2>/dev/null)
+    printf '%s\t%s\n' "$id" "${cwd% (deleted)}"
+  done
+}
+
 # Same tab-splitting requirement as screen_id_for_name/screen_list above: with
 # the default whitespace splitter, $1 is the leading-tab-trimmed "pid.name"
 # truncated at its first space, so any session whose name contains a space

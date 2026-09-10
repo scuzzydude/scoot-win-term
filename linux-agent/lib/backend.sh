@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Session-backend dispatcher. Every backend under lib/backends/*.sh must
 # define: <name>_start, <name>_list, <name>_attach_cmd, <name>_is_alive,
-# <name>_last_activity. Selected via $SCOOT_TERM_BACKEND (default: screen).
+# <name>_last_activity, <name>_cwd, <name>_cwd_bulk. Selected via
+# $SCOOT_TERM_BACKEND (default: screen).
 
 SCOOT_TERM_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCOOT_TERM_BACKEND="${SCOOT_TERM_BACKEND:-screen}"
@@ -14,3 +15,5 @@ backend_list() { "${SCOOT_TERM_BACKEND}_list" "$@"; }
 backend_attach_cmd() { "${SCOOT_TERM_BACKEND}_attach_cmd" "$@"; }
 backend_is_alive() { "${SCOOT_TERM_BACKEND}_is_alive" "$@"; }
 backend_last_activity() { "${SCOOT_TERM_BACKEND}_last_activity" "$@"; }
+backend_cwd() { "${SCOOT_TERM_BACKEND}_cwd" "$@"; }
+backend_cwd_bulk() { "${SCOOT_TERM_BACKEND}_cwd_bulk" "$@"; }

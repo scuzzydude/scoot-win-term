@@ -185,6 +185,55 @@ _sls_resume_from_history() {
   eval "$(backend_attach_cmd "$backend_id")"
 }
 
+# _sls_index_transcripts: populates $_sls_tfiles with every top-level
+# Claude Code transcript path (excludes subagents/*.jsonl -- those live one
+# level deeper), most recently modified first. Computed once per `sls`
+# call so _sls_transcript_for_cwd can scan the same in-memory list for
+# every live session instead of re-walking the directory each time.
+_sls_index_transcripts() {
+  _sls_tfiles=()
+  local path
+  while IFS= read -r path; do
+    _sls_tfiles+=("$path")
+  done < <(find "$HOME/.claude/projects" -maxdepth 2 -name '*.jsonl' -printf '%T@\t%p\n' 2>/dev/null \
+    | sort -t $'\t' -k1,1nr | cut -f2)
+}
+
+# _sls_transcript_for_cwd <cwd>: path to the transcript whose own recorded
+# cwd (first match wins -- every line carries it, so -m1 is cheap and
+# doesn't require reading the whole file) equals $cwd exactly, preferring
+# the most recently modified one if more than one dir shares that cwd.
+# Requires _sls_index_transcripts to have populated $_sls_tfiles already.
+_sls_transcript_for_cwd() {
+  local target="$1" path cwd
+  for path in "${_sls_tfiles[@]}"; do
+    cwd=$(command grep -m1 -o '"cwd":"[^"]*"' "$path" 2>/dev/null | cut -d'"' -f4)
+    [ "$cwd" = "$target" ] && { printf '%s\n' "$path"; return; }
+  done
+}
+
+# _sls_session_state <cwd>: "idle" if the transcript's last entry is the
+# turn_duration marker Claude Code appends once a turn completes cleanly
+# (nothing outstanding -- sitting at the prompt, ready for new
+# instructions); "waiting" if the last entry is mid-turn instead (a
+# tool_use with no result yet), which covers a tool still running, a
+# permission prompt, and an unanswered AskUserQuestion/ExitPlanMode alike
+# -- the transcript alone can't tell those apart, only that the turn
+# hasn't concluded. "unknown" if the cwd or its transcript can't be
+# resolved yet (session just started, nothing written).
+_sls_session_state() {
+  local cwd="$1"
+  [ -z "$cwd" ] && { echo "unknown"; return; }
+  local transcript
+  transcript=$(_sls_transcript_for_cwd "$cwd")
+  [ -z "$transcript" ] && { echo "unknown"; return; }
+  if command tail -n1 "$transcript" 2>/dev/null | command grep -q '"subtype":"turn_duration"'; then
+    echo "idle"
+  else
+    echo "waiting"
+  fi
+}
+
 # sls: lists live screen sessions straight from `screen -ls` (no
 # manifest involved), most recently listed first, and attaches on pick
 # -- using `-d -r` instead of plain `-r` when the row is already
@@ -208,12 +257,23 @@ sls() {
     return
   fi
 
+  local -a _sls_tfiles=()
+  _sls_index_transcripts
+
+  local -A _sls_cwd_of=()
+  local _sls_id _sls_cwd
+  while IFS=$'\t' read -r _sls_id _sls_cwd; do
+    _sls_cwd_of["$_sls_id"]="$_sls_cwd"
+  done < <(printf '%s\n' "${ids[@]}" | backend_cwd_bulk)
+
   echo ""
   local j=0
   while [ "$j" -lt "$i" ]; do
     local label="Detached"
     [ "${attacheds[$j]}" = "1" ] && label="Attached"
-    printf '[%d] %s (%s)\n' "$j" "${names[$j]}" "$label"
+    local state
+    state=$(_sls_session_state "${_sls_cwd_of[${ids[$j]}]:-}")
+    printf '[%d] %s (%s, %s)\n' "$j" "${names[$j]}" "$label" "$state"
     j=$((j + 1))
   done
   printf '[%d] Claude Code session history...\n' "$i"
