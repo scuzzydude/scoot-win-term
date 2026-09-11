@@ -26,8 +26,7 @@ sn() {
     return
   fi
 
-  local purpose
-  read -r -p "Purpose (optional, Enter to skip): " purpose
+  local purpose=""
 
   # Snapshot the agent's existing conversation ids for this cwd BEFORE launch,
   # so the binder can tell the new one from any that already existed here.
