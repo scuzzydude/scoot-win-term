@@ -6,10 +6,14 @@ screen_start() {
   local cmd="${2:-claude}"
   command screen -dmS "$name"
   # Type the command into the fresh session as if the user had, so it
-  # goes through the existing claude() wrapper in .bashrc exactly as
-  # today (same --name, same --dangerously-skip-permissions). Defaults
-  # to "claude"; callers resuming a prior conversation pass
-  # "claude --continue" instead.
+  # goes through the claude alias in .bashrc (--dangerously-skip-permissions).
+  # Defaults to "claude"; callers resuming a prior conversation pass
+  # "claude --continue" instead. --name is appended here so the terminal
+  # tab title is the session name rather than Claude Code's auto-generated
+  # conversation summary.
+  case "$cmd" in
+    claude|claude\ *) cmd="$cmd --name $(printf '%q' "$name")" ;;
+  esac
   command screen -S "$name" -X stuff "$cmd$(printf '\r')"
   screen_id_for_name "$name"
 }
